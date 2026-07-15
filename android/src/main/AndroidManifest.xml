@@ -1,2 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+  <!--
+    POST_NOTIFICATIONS is deliberately not requested here — requesting a runtime permission is the
+    app's responsibility, not the library's (see docs/tasks/04-example-app.md /
+    docs/tasks/05-documentation.md).
+  -->
+  <application>
+    <service
+      android:name=".PlaybackControlsService"
+      android:exported="true"
+      android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService" />
+      </intent-filter>
+    </service>
+  </application>
 </manifest>

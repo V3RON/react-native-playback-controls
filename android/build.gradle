@@ -48,4 +48,6 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
+  // media3-session brings in media3-common (SimpleBasePlayer, Player) transitively.
+  implementation "androidx.media3:media3-session:1.10.1"
 }
