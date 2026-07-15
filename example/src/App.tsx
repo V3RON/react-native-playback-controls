@@ -1,12 +1,10 @@
 import { Text, View, StyleSheet } from 'react-native';
-import { multiply } from 'react-native-playback-controls';
-
-const result = multiply(3, 7);
+import { PlaybackControls } from 'react-native-playback-controls';
 
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>Result: {result}</Text>
+      <Text>Session active: {String(PlaybackControls.isSessionActive)}</Text>
     </View>
   );
 }
