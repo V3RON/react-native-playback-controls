@@ -1,5 +1,5 @@
 #import <PlaybackControlsSpec/PlaybackControlsSpec.h>
 
-@interface PlaybackControls : NSObject <NativePlaybackControlsSpec>
+@interface PlaybackControls : NativePlaybackControlsSpecBase <NativePlaybackControlsSpec>
 
 @end
