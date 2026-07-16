@@ -1,7 +1,7 @@
 {
   "name": "react-native-playback-controls",
   "version": "0.1.0",
-  "description": "Playback controls for React Native",
+  "description": "Control the system media UI (lock screen, Control Center, Android media notification, Bluetooth buttons) without playing audio yourself.",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -43,7 +43,13 @@
   "keywords": [
     "react-native",
     "ios",
-    "android"
+    "android",
+    "media-controls",
+    "now-playing",
+    "media-session",
+    "lock-screen",
+    "turbo-module",
+    "new-architecture"
   ],
   "repository": {
     "type": "git",
