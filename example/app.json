@@ -39,8 +39,7 @@
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": true
         }
-      ],
-      "./plugins/withFixDevMenuAppIconCatalog.js"
+      ]
     ]
   }
 }
