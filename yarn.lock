@@ -6401,6 +6401,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-audio@npm:~55.0.16":
+  version: 55.0.16
+  resolution: "expo-audio@npm:55.0.16"
+  peerDependencies:
+    expo: "*"
+    expo-asset: "*"
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/f85e1414f0ce7f4c1bbd327486e86ef6cf89287deb5a0e586a7dd0f63a042e348f636859b01f080121610d02cf83da85c6b3e7c736b350a145b4d406c8f12432
+  languageName: node
+  linkType: hard
+
 "expo-constants@npm:~55.0.17":
   version: 55.0.17
   resolution: "expo-constants@npm:55.0.17"
@@ -10571,6 +10583,7 @@ __metadata:
   dependencies:
     "@expo/metro-runtime": "npm:~55.0.12"
     expo: "npm:~55.0.28"
+    expo-audio: "npm:~55.0.16"
     expo-dev-client: "npm:~55.0.37"
     expo-status-bar: "npm:~55.0.6"
     react: "npm:19.2.0"
