@@ -33,6 +33,10 @@ class PlaybackControlsService : MediaSessionService() {
 
     player = controlsPlayer
     mediaSession = session
+    // No MediaController ever connects (same-process design), so onGetSession() alone never
+    // registers the session with the service — without addSession() the media notification
+    // manager has no sessions to render and no notification is ever posted.
+    addSession(session)
     SessionHolder.attach(controlsPlayer, session)
   }
 
@@ -52,6 +56,7 @@ class PlaybackControlsService : MediaSessionService() {
   private fun releaseSessionAndStop() {
     mediaSession?.let { session ->
       SessionHolder.detach(session)
+      removeSession(session)
       session.release()
     }
     player?.release()
