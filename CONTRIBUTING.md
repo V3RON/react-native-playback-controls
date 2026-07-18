@@ -104,13 +104,11 @@ Our pre-commit hooks verify that your commit message matches this format when co
 
 ### Publishing to npm
 
-We use [release-it](https://github.com/release-it/release-it) to make it easier to publish new versions. It handles common tasks like bumping version based on semver, creating tags and releases etc.
+Releases are created by the [Release workflow](https://github.com/V3RON/react-native-playback-controls/actions/workflows/release.yml). Start it with **Run workflow** on the `main` branch. No version input is required: [release-it](https://github.com/release-it/release-it) derives the next version from the conventional commits since the previous release, updates `package.json`, creates the release commit and tag, publishes the package to npm, and creates the GitHub release.
 
-To publish new versions, run the following:
+The release workflow uses npm trusted publishing. It does not use an npm token or any dependency cache. The npm package must trust the `release.yml` workflow in `V3RON/react-native-playback-controls` with the `release` GitHub environment, and that environment should require maintainer approval.
 
-```sh
-yarn release
-```
+If a run stops after creating the tag or publishing to npm, run the workflow again. It detects the incomplete latest release and resumes it rather than calculating another version.
 
 
 ### Scripts
