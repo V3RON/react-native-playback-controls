@@ -1,0 +1,254 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require the latest main commit
+        run: |
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Releases must be dispatched from main." >&2
+            exit 1
+          fi
+
+          git fetch origin main
+
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "main advanced after this release was dispatched. Start a new release run." >&2
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Verify trusted publishing prerequisites
+        run: |
+          node --version
+          npm --version
+
+          node --input-type=module <<'EOF'
+          import { execFileSync } from 'node:child_process';
+
+          const [major, minor, patch] = execFileSync('npm', ['--version'], {
+            encoding: 'utf8',
+          })
+            .trim()
+            .split('.')
+            .map(Number);
+
+          if (
+            major < 11 ||
+            (major === 11 && minor < 5) ||
+            (major === 11 && minor === 5 && patch < 1)
+          ) {
+            throw new Error('npm 11.5.1 or newer is required for trusted publishing.');
+          }
+          EOF
+
+      - name: Detect an interrupted release
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          latest_tag=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)
+
+          if [[ -z "${latest_tag}" ]]; then
+            echo "RELEASE_MODE=fresh" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+
+          latest_version="${latest_tag#v}"
+          tag_version=$(git show "${latest_tag}:package.json" | node -p \
+            "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).version")
+
+          if [[ "${tag_version}" != "${latest_version}" ]]; then
+            echo "${latest_tag} does not match package.json version ${tag_version}." >&2
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "${latest_tag}" HEAD; then
+            echo "${latest_tag} is not an ancestor of main." >&2
+            exit 1
+          fi
+
+          npm_published=false
+          npm_error=$(mktemp)
+          if registry_version=$(npm view \
+            "react-native-playback-controls@${latest_version}" version --json 2>"${npm_error}"); then
+            registry_version="${registry_version//\"/}"
+            registry_version="${registry_version//$'\n'/}"
+            if [[ "${registry_version}" != "${latest_version}" ]]; then
+              echo "npm returned unexpected version ${registry_version}." >&2
+              exit 1
+            fi
+            npm_published=true
+          elif ! grep -q 'E404' "${npm_error}"; then
+            cat "${npm_error}" >&2
+            exit 1
+          fi
+
+          export RELEASE_TAG="${latest_tag}"
+          github_released=$(node --input-type=module <<'EOF'
+          const response = await fetch(
+            `https://api.github.com/repos/${process.env.REPOSITORY}/releases/tags/${encodeURIComponent(process.env.RELEASE_TAG)}`,
+            { headers: { Accept: 'application/vnd.github+json' } }
+          );
+
+          if (response.status === 200) {
+            console.log('true');
+          } else if (response.status === 404) {
+            console.log('false');
+          } else {
+            throw new Error(`GitHub release lookup failed with HTTP ${response.status}.`);
+          }
+          EOF
+          )
+
+          if [[ "${github_released}" == "true" && "${npm_published}" != "true" ]]; then
+            echo "${latest_tag} has a GitHub release but is absent from npm." >&2
+            exit 1
+          fi
+
+          if [[ "${npm_published}" != "true" || "${github_released}" != "true" ]]; then
+            echo "Resuming interrupted release ${latest_version}."
+            echo "RELEASE_MODE=recovery" >> "${GITHUB_ENV}"
+            echo "RELEASE_VERSION=${latest_version}" >> "${GITHUB_ENV}"
+            echo "RELEASE_TAG=${latest_tag}" >> "${GITHUB_ENV}"
+            echo "NPM_PUBLISHED=${npm_published}" >> "${GITHUB_ENV}"
+            echo "GITHUB_RELEASED=${github_released}" >> "${GITHUB_ENV}"
+            git checkout --detach "${latest_tag}"
+          else
+            current_version=$(node -p "require('./package.json').version")
+            if [[ "${current_version}" != "${latest_version}" ]]; then
+              echo "package.json is ${current_version}, but the latest release is ${latest_version}." >&2
+              exit 1
+            fi
+            echo "RELEASE_MODE=fresh" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Install dependencies without a shared cache
+        env:
+          YARN_ENABLE_GLOBAL_CACHE: 'false'
+        run: yarn install --immutable
+
+      - name: Validate package
+        run: |
+          yarn lint
+          yarn typecheck
+          yarn test --maxWorkers=2
+          yarn prepare
+          npm pack --dry-run
+          git diff --exit-code
+
+      - name: Determine next version
+        if: env.RELEASE_MODE == 'fresh'
+        run: |
+          release_version=$(yarn release-it --release-version --ci \
+            --npm.publish=false --no-github)
+
+          if [[ -z "${release_version}" ]]; then
+            echo "No conventional commits warrant a release." >&2
+            exit 1
+          fi
+
+          echo "release-it selected ${release_version}."
+          echo "RELEASE_VERSION=${release_version}" >> "${GITHUB_ENV}"
+          echo "RELEASE_TAG=v${release_version}" >> "${GITHUB_ENV}"
+          echo "NPM_PUBLISHED=false" >> "${GITHUB_ENV}"
+          echo "GITHUB_RELEASED=false" >> "${GITHUB_ENV}"
+
+      - name: Create release commit and tag
+        if: env.RELEASE_MODE == 'fresh'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          original_push_url=$(git remote get-url --push origin)
+          trap 'git remote set-url --push origin "${original_push_url}"' EXIT
+          git remote set-url --push origin \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          yarn release "${RELEASE_VERSION}" --ci --npm.publish=false --no-github
+
+          actual_version=$(node -p "require('./package.json').version")
+          if [[ "${actual_version}" != "${RELEASE_VERSION}" ]]; then
+            echo "release-it selected ${actual_version}, expected ${RELEASE_VERSION}." >&2
+            exit 1
+          fi
+
+          git remote set-url --push origin "${original_push_url}"
+          trap - EXIT
+
+      - name: Publish package to npm
+        if: env.NPM_PUBLISHED != 'true'
+        run: yarn release --ci --no-increment --no-git --no-github --npm.skipChecks
+
+      - name: Verify npm publication
+        run: |
+          for attempt in 1 2 3 4 5; do
+            published_version=$(npm view \
+              "react-native-playback-controls@${RELEASE_VERSION}" version --json 2>/dev/null || true)
+            published_version="${published_version//\"/}"
+            published_version="${published_version//$'\n'/}"
+
+            if [[ "${published_version}" == "${RELEASE_VERSION}" ]]; then
+              exit 0
+            fi
+
+            if [[ "${attempt}" -lt 5 ]]; then
+              sleep 3
+            fi
+          done
+
+          echo "react-native-playback-controls@${RELEASE_VERSION} is not visible on npm." >&2
+          exit 1
+
+      - name: Create GitHub release
+        if: env.GITHUB_RELEASED != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: yarn release --ci --no-increment --no-git --npm.publish=false
+
+      - name: Verify GitHub release
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          export RELEASE_TAG
+          node --input-type=module <<'EOF'
+          const response = await fetch(
+            `https://api.github.com/repos/${process.env.REPOSITORY}/releases/tags/${encodeURIComponent(process.env.RELEASE_TAG)}`,
+            { headers: { Accept: 'application/vnd.github+json' } }
+          );
+
+          if (response.status !== 200) {
+            throw new Error(`GitHub release lookup failed with HTTP ${response.status}.`);
+          }
+          EOF
